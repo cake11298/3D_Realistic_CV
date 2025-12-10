@@ -6,8 +6,6 @@
 import {
   Engine,
   WebGPUEngine,
-  Scene,
-  NullEngine,
 } from '@babylonjs/core';
 
 export class AppEngine {
@@ -30,7 +28,9 @@ export class AppEngine {
   async initialize(): Promise<boolean> {
     try {
       // Check if WebGPU is supported
-      if (await WebGPUEngine.IsSupportedAsync) {
+      const webgpuSupported = await WebGPUEngine.IsSupportedAsync;
+
+      if (webgpuSupported) {
         console.log('🎮 WebGPU is supported, initializing WebGPU Engine...');
         return await this.initializeWebGPU();
       } else {
@@ -49,23 +49,7 @@ export class AppEngine {
    */
   private async initializeWebGPU(): Promise<boolean> {
     try {
-      const engine = new WebGPUEngine(this.canvas, {
-        deviceDescriptor: {
-          requiredFeatures: [
-            'depth-clip-control',
-            'depth32float-stencil8',
-            'texture-compression-bc',
-            'timestamp-query',
-            'indirect-first-instance',
-          ],
-        },
-        audioEngine: false, // Disable audio for now
-        antialias: true,
-        stencil: true,
-        powerPreference: 'high-performance',
-      });
-
-      // Wait for engine initialization
+      const engine = new WebGPUEngine(this.canvas);
       await engine.initAsync();
 
       this.engine = engine;
@@ -75,8 +59,6 @@ export class AppEngine {
       this.configureEngine();
 
       console.log('✓ WebGPU Engine initialized successfully');
-      console.log('GPU Adapter:', engine.adapterSupportedFeatures);
-
       return true;
     } catch (error) {
       console.error('Failed to initialize WebGPU:', error);
@@ -95,7 +77,6 @@ export class AppEngine {
         stencil: true,
         antialias: true,
         powerPreference: 'high-performance',
-        doNotHandleContextLost: true,
       });
 
       this.engine = engine;
@@ -120,15 +101,6 @@ export class AppEngine {
 
     // Enable optimizations
     this.engine.enableOfflineSupport = false;
-    this.engine.doNotHandleContextLost = true;
-
-    // Set loading UI to null (we have custom loading screen)
-    this.engine.loadingScreen = {
-      displayLoadingUI: () => {},
-      hideLoadingUI: () => {},
-      loadingUIBackgroundColor: '#000000',
-      loadingUIText: 'Loading...',
-    };
   }
 
   /**

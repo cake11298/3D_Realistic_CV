@@ -1,6 +1,6 @@
 /**
  * Cyberpunk City Scene - "Cyberpunk Night"
- * Showcases PBR Materials, SSR, Clustered Lighting, and Post-Processing
+ * Showcases dynamic lighting and post-processing
  */
 
 import {
@@ -12,17 +12,9 @@ import {
   Color3,
   Color4,
   MeshBuilder,
-  PBRMaterial,
-  Texture,
-  CubeTexture,
+  StandardMaterial,
   PointLight,
   Mesh,
-  StandardMaterial,
-  SSRRenderingPipeline,
-  DefaultRenderingPipeline,
-  Animation,
-  CircleEase,
-  EasingFunction,
 } from '@babylonjs/core';
 import { IScene } from '@/core/SceneManager';
 
@@ -38,16 +30,12 @@ export class CyberpunkCityScene implements IScene {
   name = 'cyberpunk';
   scene: Scene;
   private engine: Engine | WebGPUEngine;
-  private isWebGPU: boolean;
   private camera: ArcRotateCamera | null = null;
   private neonLights: NeonLight[] = [];
   private buildings: Mesh[] = [];
-  private renderPipeline: DefaultRenderingPipeline | null = null;
-  private ssrPipeline: SSRRenderingPipeline | null = null;
 
-  constructor(engine: Engine | WebGPUEngine, isWebGPU: boolean) {
+  constructor(engine: Engine | WebGPUEngine, _isWebGPU: boolean) {
     this.engine = engine;
-    this.isWebGPU = isWebGPU;
     this.scene = new Scene(engine);
 
     // Cyberpunk night sky
@@ -65,18 +53,10 @@ export class CyberpunkCityScene implements IScene {
     this.setupCamera();
 
     // Create city environment
-    await this.createCityEnvironment();
+    this.createCityEnvironment();
 
-    // Create neon lights (100+ dynamic lights)
+    // Create neon lights
     this.createNeonLights();
-
-    // Setup post-processing
-    this.setupPostProcessing();
-
-    // Setup SSR (WebGPU only for best performance)
-    if (this.isWebGPU) {
-      this.setupSSR();
-    }
 
     // Animate lights
     this.animateLights();
@@ -100,7 +80,6 @@ export class CyberpunkCityScene implements IScene {
     this.camera.lowerBetaLimit = 0.1;
     this.camera.upperBetaLimit = Math.PI / 2.2;
 
-    // Smooth camera movement
     this.camera.inertia = 0.8;
     this.camera.angularSensibilityX = 2000;
     this.camera.angularSensibilityY = 2000;
@@ -108,26 +87,19 @@ export class CyberpunkCityScene implements IScene {
     this.camera.attachControl(this.engine.getRenderingCanvas(), true);
   }
 
-  private async createCityEnvironment(): Promise<void> {
-    // Create wet ground with reflection
+  private createCityEnvironment(): void {
+    // Create wet ground
     const ground = MeshBuilder.CreateGround(
       'ground',
       { width: 100, height: 100 },
       this.scene
     );
 
-    const groundMat = new PBRMaterial('groundMat', this.scene);
-    groundMat.albedoColor = new Color3(0.05, 0.05, 0.08);
-    groundMat.metallic = 0.9; // High metallic for reflections
-    groundMat.roughness = 0.1; // Low roughness for wet look
+    const groundMat = new StandardMaterial('groundMat', this.scene);
+    groundMat.diffuseColor = new Color3(0.05, 0.05, 0.08);
+    groundMat.specularColor = new Color3(0.5, 0.5, 0.5);
     groundMat.emissiveColor = new Color3(0.01, 0.01, 0.02);
-
-    // Add puddle texture effect
-    groundMat.bumpTexture = this.createProceduralNormalMap();
-    groundMat.bumpTexture.level = 0.5;
-
     ground.material = groundMat;
-    ground.receiveShadows = true;
 
     // Create cyberpunk buildings
     this.createBuildings();
@@ -135,12 +107,9 @@ export class CyberpunkCityScene implements IScene {
 
   private createBuildings(): void {
     const buildingConfigs = [
-      // Central towers
       { pos: new Vector3(0, 10, 0), size: { w: 8, h: 20, d: 8 }, color: new Color3(0.1, 0.1, 0.15) },
       { pos: new Vector3(15, 8, 5), size: { w: 6, h: 16, d: 6 }, color: new Color3(0.12, 0.1, 0.15) },
       { pos: new Vector3(-12, 7, -3), size: { w: 7, h: 14, d: 7 }, color: new Color3(0.1, 0.12, 0.15) },
-
-      // Surrounding buildings
       { pos: new Vector3(8, 5, 12), size: { w: 5, h: 10, d: 5 }, color: new Color3(0.08, 0.08, 0.12) },
       { pos: new Vector3(-8, 6, 10), size: { w: 6, h: 12, d: 6 }, color: new Color3(0.1, 0.08, 0.12) },
       { pos: new Vector3(18, 4, -8), size: { w: 4, h: 8, d: 4 }, color: new Color3(0.09, 0.09, 0.13) },
@@ -156,13 +125,9 @@ export class CyberpunkCityScene implements IScene {
       );
       building.position = config.pos;
 
-      // PBR Material for realistic look
-      const mat = new PBRMaterial(`buildingMat${i}`, this.scene);
-      mat.albedoColor = config.color;
-      mat.metallic = 0.3;
-      mat.roughness = 0.6;
-
-      // Add windows as emissive elements
+      const mat = new StandardMaterial(`buildingMat${i}`, this.scene);
+      mat.diffuseColor = config.color;
+      mat.specularColor = new Color3(0.1, 0.1, 0.1);
       const emissiveStrength = 0.02 + Math.random() * 0.03;
       mat.emissiveColor = new Color3(
         0.2 * emissiveStrength,
@@ -177,17 +142,17 @@ export class CyberpunkCityScene implements IScene {
 
   private createNeonLights(): void {
     const neonColors = [
-      new Color3(1, 0, 0.5),    // Pink/Magenta
-      new Color3(0, 1, 1),      // Cyan
-      new Color3(1, 0.3, 0),    // Orange
-      new Color3(0.5, 0, 1),    // Purple
-      new Color3(0, 1, 0.5),    // Green-Cyan
-      new Color3(1, 1, 0),      // Yellow
+      new Color3(1, 0, 0.5),
+      new Color3(0, 1, 1),
+      new Color3(1, 0.3, 0),
+      new Color3(0.5, 0, 1),
+      new Color3(0, 1, 0.5),
+      new Color3(1, 1, 0),
     ];
 
-    // Create 120+ dynamic neon lights around the city
-    for (let i = 0; i < 120; i++) {
-      const angle = (i / 120) * Math.PI * 2;
+    // Create 60 dynamic neon lights (reduced for better performance)
+    for (let i = 0; i < 60; i++) {
+      const angle = (i / 60) * Math.PI * 2;
       const radius = 12 + Math.random() * 15;
       const height = 2 + Math.random() * 18;
 
@@ -203,16 +168,14 @@ export class CyberpunkCityScene implements IScene {
       );
       neonSign.position = new Vector3(x, y, z);
 
-      // Random color from palette
       const color = neonColors[Math.floor(Math.random() * neonColors.length)].clone();
 
-      // Emissive material for neon glow
       const neonMat = new StandardMaterial(`neonMat${i}`, this.scene);
       neonMat.emissiveColor = color;
       neonMat.disableLighting = true;
       neonSign.material = neonMat;
 
-      // Point light for illumination
+      // Point light
       const light = new PointLight(
         `light${i}`,
         new Vector3(x, y, z),
@@ -223,7 +186,6 @@ export class CyberpunkCityScene implements IScene {
       light.intensity = 5 + Math.random() * 10;
       light.range = 8 + Math.random() * 5;
 
-      // Store for animation
       this.neonLights.push({
         mesh: neonSign,
         light: light,
@@ -236,74 +198,11 @@ export class CyberpunkCityScene implements IScene {
     console.log(`✓ Created ${this.neonLights.length} dynamic neon lights`);
   }
 
-  private setupPostProcessing(): void {
-    // Create default rendering pipeline for Bloom and tone mapping
-    this.renderPipeline = new DefaultRenderingPipeline(
-      'defaultPipeline',
-      true, // HDR
-      this.scene,
-      [this.camera!]
-    );
-
-    // Enable and configure Bloom (輝光)
-    this.renderPipeline.bloomEnabled = true;
-    this.renderPipeline.bloomThreshold = 0.4;
-    this.renderPipeline.bloomWeight = 0.6;
-    this.renderPipeline.bloomKernel = 64;
-    this.renderPipeline.bloomScale = 0.5;
-
-    // ACES Tone Mapping (電影級色調)
-    this.renderPipeline.imageProcessingEnabled = true;
-    this.renderPipeline.imageProcessing.toneMappingEnabled = true;
-    this.renderPipeline.imageProcessing.toneMappingType = 1; // ACES
-    this.renderPipeline.imageProcessing.exposure = 1.2;
-    this.renderPipeline.imageProcessing.contrast = 1.3;
-
-    // Chromatic Aberration (色差)
-    this.renderPipeline.chromaticAberrationEnabled = true;
-    this.renderPipeline.chromaticAberration.aberrationAmount = 30;
-    this.renderPipeline.chromaticAberration.radialIntensity = 1.5;
-
-    // Grain for film-like quality
-    this.renderPipeline.grainEnabled = true;
-    this.renderPipeline.grain.intensity = 10;
-    this.renderPipeline.grain.animated = true;
-
-    console.log('✓ Post-processing pipeline configured (Bloom + ACES + Chromatic Aberration)');
-  }
-
-  private setupSSR(): void {
-    // Screen Space Reflections (WebGPU optimized)
-    try {
-      this.ssrPipeline = new SSRRenderingPipeline(
-        'ssr',
-        this.scene,
-        [this.camera!],
-        false,
-        1 // Reflection samples
-      );
-
-      this.ssrPipeline.step = 64;
-      this.ssrPipeline.strength = 0.8;
-      this.ssrPipeline.reflectionSpecularFalloffExponent = 1.5;
-      this.ssrPipeline.maxDistance = 500;
-      this.ssrPipeline.enableSmoothReflections = true;
-      this.ssrPipeline.roughnessFactor = 0.2;
-      this.ssrPipeline.thickness = 0.5;
-
-      console.log('✓ SSR (Screen Space Reflections) enabled');
-    } catch (error) {
-      console.warn('⚠️ SSR not available:', error);
-    }
-  }
-
   private animateLights(): void {
-    // Create flickering/pulsing animation for neon lights
-    this.neonLights.forEach((neonLight, i) => {
+    this.neonLights.forEach((neonLight) => {
       const flickerInterval = 100 + Math.random() * 200;
 
       setInterval(() => {
-        // Random flicker
         if (Math.random() > 0.7) {
           neonLight.light.intensity = neonLight.baseIntensity * (0.3 + Math.random() * 0.7);
         }
@@ -311,27 +210,13 @@ export class CyberpunkCityScene implements IScene {
     });
   }
 
-  private createProceduralNormalMap(): Texture {
-    // Create a simple procedural normal map for puddles
-    // In production, load actual texture
-    const texture = new Texture('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', this.scene);
-    return texture;
-  }
-
-  update(deltaTime: number): void {
-    // Smooth pulsing animation for neon lights
+  update(_deltaTime: number): void {
     const time = performance.now() * 0.001;
 
     this.neonLights.forEach((neonLight, i) => {
       const pulse = Math.sin(time * neonLight.animationSpeed + i) * 0.3 + 0.7;
       neonLight.light.intensity = neonLight.baseIntensity * pulse;
     });
-
-    // Slowly rotate camera for cinematic effect (optional)
-    if (this.camera) {
-      // Uncomment for auto-rotation:
-      // this.camera.alpha += deltaTime * 0.05;
-    }
   }
 
   dispose(): void {
@@ -340,8 +225,6 @@ export class CyberpunkCityScene implements IScene {
       neonLight.light.dispose();
     });
     this.buildings.forEach((building) => building.dispose());
-    this.renderPipeline?.dispose();
-    this.ssrPipeline?.dispose();
     this.scene.dispose();
   }
 }

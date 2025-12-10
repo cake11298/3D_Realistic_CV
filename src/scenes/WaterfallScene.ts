@@ -1,6 +1,6 @@
 /**
  * Waterfall Scene - "The Flow"
- * Showcases GPU Compute Shader particle simulation
+ * Simplified version with standard particle system
  */
 
 import {
@@ -11,33 +11,26 @@ import {
   Vector3,
   HemisphericLight,
   DirectionalLight,
-  ShadowGenerator,
   MeshBuilder,
   StandardMaterial,
   Color3,
   Color4,
-  PointsCloudSystem,
   Mesh,
-  PBRMaterial,
-  CubeTexture,
+  ParticleSystem,
   Texture,
 } from '@babylonjs/core';
 import { IScene } from '@/core/SceneManager';
-import { ComputeParticleSystem } from '@modules/ComputeParticleSystem';
 
 export class WaterfallScene implements IScene {
   name = 'waterfall';
   scene: Scene;
   private engine: Engine | WebGPUEngine;
-  private isWebGPU: boolean;
   private camera: ArcRotateCamera | null = null;
-  private computeParticles: ComputeParticleSystem | null = null;
-  private particleCloud: PointsCloudSystem | null = null;
+  private particleSystem: ParticleSystem | null = null;
   private obstacleMeshes: Mesh[] = [];
 
-  constructor(engine: Engine | WebGPUEngine, isWebGPU: boolean) {
+  constructor(engine: Engine | WebGPUEngine, _isWebGPU: boolean) {
     this.engine = engine;
-    this.isWebGPU = isWebGPU;
     this.scene = new Scene(engine);
     this.scene.clearColor = new Color4(0.05, 0.05, 0.15, 1.0);
   }
@@ -52,15 +45,10 @@ export class WaterfallScene implements IScene {
     this.setupLighting();
 
     // Create environment
-    await this.createEnvironment();
+    this.createEnvironment();
 
-    // Initialize compute particle system (WebGPU only)
-    if (this.isWebGPU) {
-      await this.initializeComputeParticles();
-    } else {
-      console.warn('⚠️ Compute shaders not available in WebGL2, using fallback particle system');
-      this.initializeFallbackParticles();
-    }
+    // Create particle system
+    this.createParticleSystem();
 
     console.log('✓ Waterfall Scene initialized');
   }
@@ -101,14 +89,9 @@ export class WaterfallScene implements IScene {
     );
     dirLight.intensity = 0.8;
     dirLight.position = new Vector3(10, 15, 10);
-
-    // Enable shadows
-    const shadowGenerator = new ShadowGenerator(2048, dirLight);
-    shadowGenerator.useBlurExponentialShadowMap = true;
-    shadowGenerator.blurScale = 2;
   }
 
-  private async createEnvironment(): Promise<void> {
+  private createEnvironment(): void {
     // Create ground/pool
     const ground = MeshBuilder.CreateGround(
       'ground',
@@ -117,15 +100,12 @@ export class WaterfallScene implements IScene {
     );
     ground.position.y = -10;
 
-    const groundMat = new PBRMaterial('groundMat', this.scene);
-    groundMat.albedoColor = new Color3(0.1, 0.15, 0.2);
-    groundMat.metallic = 0.1;
-    groundMat.roughness = 0.3;
-    groundMat.alpha = 0.9;
+    const groundMat = new StandardMaterial('groundMat', this.scene);
+    groundMat.diffuseColor = new Color3(0.1, 0.15, 0.2);
+    groundMat.specularColor = new Color3(0.5, 0.5, 0.5);
     ground.material = groundMat;
-    ground.receiveShadows = true;
 
-    // Create rock obstacles (matching compute shader obstacles)
+    // Create rock obstacles
     const obstaclePositions = [
       { pos: new Vector3(2, 0, 0), radius: 1.5 },
       { pos: new Vector3(-2, -2, 1), radius: 1.2 },
@@ -142,12 +122,9 @@ export class WaterfallScene implements IScene {
       );
       rock.position = obstacle.pos;
 
-      const rockMat = new PBRMaterial(`rockMat${i}`, this.scene);
-      rockMat.albedoColor = new Color3(0.3, 0.25, 0.2);
-      rockMat.metallic = 0.0;
-      rockMat.roughness = 0.9;
+      const rockMat = new StandardMaterial(`rockMat${i}`, this.scene);
+      rockMat.diffuseColor = new Color3(0.3, 0.25, 0.2);
       rock.material = rockMat;
-      rock.receiveShadows = true;
 
       this.obstacleMeshes.push(rock);
     });
@@ -165,85 +142,67 @@ export class WaterfallScene implements IScene {
     emitter.material = emitterMat;
   }
 
-  private async initializeComputeParticles(): Promise<void> {
-    // Initialize compute particle system
-    this.computeParticles = new ComputeParticleSystem(
-      this.engine,
-      this.scene,
-      50000 // 50K particles
-    );
-    await this.computeParticles.initialize();
+  private createParticleSystem(): void {
+    // Create particle system emitter
+    const fountain = MeshBuilder.CreateBox('fountain', { size: 0.1 }, this.scene);
+    fountain.position = new Vector3(0, 10, 0);
+    fountain.isVisible = false;
 
-    // Create point cloud for rendering particles
-    // Note: In production, you'd create a custom shader to read from the compute buffer directly
-    // For this demo, we'll create a static point cloud and update it each frame
-    this.createParticleVisualization();
-
-    console.log('✓ Compute particle system active with 50,000 particles');
-  }
-
-  private createParticleVisualization(): void {
-    if (!this.computeParticles) return;
-
-    // Create a simple point cloud visualization
-    // In production, use a custom vertex shader that reads from the compute buffer
-    const pcs = new PointsCloudSystem('particleCloud', 8, this.scene);
-
-    const particleCount = this.computeParticles.getParticleCount();
-
-    // Initialize function (called once)
-    pcs.addPoints(particleCount, (particle, i) => {
-      particle.position = new Vector3(0, 10, 0);
-      particle.color = new Color4(0.3, 0.7, 1.0, 0.8);
-    });
-
-    pcs.buildMeshAsync().then((mesh) => {
-      this.particleCloud = pcs;
-
-      // Create material for particles
-      const mat = new StandardMaterial('particleMat', this.scene);
-      mat.emissiveColor = new Color3(0.5, 0.9, 1.0);
-      mat.disableLighting = true;
-      mat.pointsCloud = true;
-      mat.pointSize = 3;
-      mesh.material = mat;
-    });
-  }
-
-  private initializeFallbackParticles(): void {
-    // Fallback for WebGL2: use standard CPU-based particle system
-    console.log('Using CPU-based particle fallback (limited to 5000 particles)');
-
-    // TODO: Implement simple CPU particle system for WebGL2 fallback
-    // For now, just create a placeholder
-    const waterfall = MeshBuilder.CreateCylinder(
-      'waterfall',
-      { height: 10, diameter: 2 },
+    // Create particle system
+    this.particleSystem = new ParticleSystem('particles', 5000, this.scene);
+    this.particleSystem.particleTexture = new Texture(
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAOUlEQVQoU2NkYGD4z0AEYBxXV1dGRkaGahC7sbERLI5sAUgBWBybImQFyArRFWArIKgAXSG6ArwKAPjVIgjYuki4AAAAAElFTkSuQmCC',
       this.scene
     );
-    waterfall.position = new Vector3(0, 5, 0);
 
-    const mat = new StandardMaterial('waterfallMat', this.scene);
-    mat.emissiveColor = new Color3(0.3, 0.7, 1.0);
-    mat.alpha = 0.5;
-    waterfall.material = mat;
+    // Particle properties
+    this.particleSystem.emitter = fountain;
+    this.particleSystem.minEmitBox = new Vector3(-1, 0, -1);
+    this.particleSystem.maxEmitBox = new Vector3(1, 0, 1);
+
+    // Colors
+    this.particleSystem.color1 = new Color4(0.3, 0.7, 1.0, 1.0);
+    this.particleSystem.color2 = new Color4(0.1, 0.5, 0.9, 1.0);
+    this.particleSystem.colorDead = new Color4(0.0, 0.3, 0.6, 0.0);
+
+    // Size
+    this.particleSystem.minSize = 0.1;
+    this.particleSystem.maxSize = 0.3;
+
+    // Life time
+    this.particleSystem.minLifeTime = 2;
+    this.particleSystem.maxLifeTime = 4;
+
+    // Emission rate
+    this.particleSystem.emitRate = 1000;
+
+    // Blend mode
+    this.particleSystem.blendMode = ParticleSystem.BLENDMODE_ONEONE;
+
+    // Direction
+    this.particleSystem.direction1 = new Vector3(-2, -8, -2);
+    this.particleSystem.direction2 = new Vector3(2, -10, 2);
+
+    // Speed
+    this.particleSystem.minEmitPower = 1;
+    this.particleSystem.maxEmitPower = 3;
+    this.particleSystem.updateSpeed = 0.005;
+
+    // Gravity
+    this.particleSystem.gravity = new Vector3(0, -9.81, 0);
+
+    // Start the particle system
+    this.particleSystem.start();
+
+    console.log('✓ Particle system created with 5,000 particles');
   }
 
-  update(deltaTime: number): void {
-    // Update compute shader simulation
-    if (this.computeParticles) {
-      this.computeParticles.update(deltaTime);
-    }
-
-    // Update particle visualization
-    // Note: In production, use instanced rendering with compute buffer
-    // For this demo, we're using point cloud (which is CPU-updated)
-    // The actual physics runs on GPU via compute shader
+  update(_deltaTime: number): void {
+    // Particle system updates automatically
   }
 
   dispose(): void {
-    this.computeParticles?.dispose();
-    this.particleCloud?.dispose();
+    this.particleSystem?.dispose();
     this.obstacleMeshes.forEach((mesh) => mesh.dispose());
     this.scene.dispose();
   }
