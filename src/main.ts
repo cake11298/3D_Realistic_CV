@@ -59,9 +59,10 @@ class Application {
     if (!this.engine || !this.sceneManager) return;
 
     const engine = this.engine.getEngine();
-    const scene = this.sceneManager.getCurrentScene();
 
     engine.runRenderLoop(() => {
+      // 動態獲取當前場景，確保切換後不會使用已銷毀的舊場景
+      const scene = this.sceneManager!.getCurrentScene();
       scene.render();
       this.fpsCounter.update();
       this.sceneManager!.update();
