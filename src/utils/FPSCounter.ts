@@ -3,14 +3,12 @@
  */
 
 export class FPSCounter {
-  private elementId: string;
   private element: HTMLElement | null;
   private lastTime: number = performance.now();
   private frames: number = 0;
   private fps: number = 0;
 
   constructor(elementId: string) {
-    this.elementId = elementId;
     this.element = document.getElementById(elementId);
   }
 

@@ -64,7 +64,7 @@ class Application {
     engine.runRenderLoop(() => {
       scene.render();
       this.fpsCounter.update();
-      this.sceneManager.update();
+      this.sceneManager!.update();
     });
 
     // Handle window resize
